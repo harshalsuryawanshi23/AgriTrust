@@ -13,9 +13,40 @@ export async function getPriceSummary(crop: string, priceData: PriceData[]) {
       historicalPrices: JSON.stringify(historicalPrices),
       predictedPrices: JSON.stringify(predictedPrices),
     });
-    return { summary: result.summary, error: null };
+    
+    // Format the enhanced AI response
+    const formattedSummary = formatEnhancedSummary(result);
+    return { summary: formattedSummary, error: null };
   } catch (error) {
     console.error('Error getting price summary:', error);
     return { summary: null, error: 'Failed to generate summary. Please try again.' };
   }
+}
+
+/**
+ * Format the enhanced AI response for display
+ */
+function formatEnhancedSummary(result: any): string {
+  const { summary, trendAnalysis, riskAssessment, recommendations, confidenceScore } = result;
+  
+  let formatted = summary;
+  
+  if (trendAnalysis) {
+    formatted += `\n\n**📈 Trend Analysis:**\n${trendAnalysis}`;
+  }
+  
+  if (riskAssessment) {
+    formatted += `\n\n**⚠️ Risk Assessment:**\n${riskAssessment}`;
+  }
+  
+  if (recommendations) {
+    formatted += `\n\n**💡 Recommendations:**\n${recommendations}`;
+  }
+  
+  if (confidenceScore !== undefined) {
+    const confidenceEmoji = confidenceScore >= 80 ? '🟢' : confidenceScore >= 60 ? '🟡' : '🔴';
+    formatted += `\n\n**${confidenceEmoji} Confidence Score:** ${confidenceScore}%`;
+  }
+  
+  return formatted;
 }

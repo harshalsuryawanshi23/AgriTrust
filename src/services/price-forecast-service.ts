@@ -1,4 +1,11 @@
 import { CropPriceData, PriceDataPoint, AVAILABLE_CROPS } from '@/types/price-forecast';
+import { summarizePricePredictions } from '@/ai/flows/summarize-price-predictions';
+import { 
+  calculatePriceStatistics, 
+  analyzeTrends, 
+  assessRisk,
+  getVolatilityCategory
+} from '@/lib/price-analysis-utils';
 
 const generateHistoricalData = (crop: string, days: number): PriceDataPoint[] => {
   const data: PriceDataPoint[] = [];
@@ -33,26 +40,93 @@ const generatePredictedData = (historicalData: PriceDataPoint[], days: number): 
   return data;
 };
 
-const generateAISummary = (crop: string, predictedData: PriceDataPoint[]): string => {
-  const trend = predictedData[predictedData.length - 1].price > predictedData[0].price ? 'upward' : 'downward';
-  const avgPrice = predictedData.reduce((acc, p) => acc + p.price, 0) / predictedData.length;
-  return `The price of ${crop} is expected to show a slight ${trend} trend over the next month, with an average price of around ₹${avgPrice.toFixed(2)}/qtl. Market volatility is expected to be moderate.`
+/**
+ * Generate AI-powered summary using advanced analysis
+ */
+const generateAIPoweredSummary = async (
+  crop: string, 
+  historical: PriceDataPoint[], 
+  predicted: PriceDataPoint[]
+): Promise<string> => {
+  try {
+    // Perform statistical analysis
+    const allData = [...historical, ...predicted];
+    const statistics = calculatePriceStatistics(allData);
+    const trends = analyzeTrends(allData);
+    const risk = assessRisk(statistics, trends);
+    const volatilityCategory = getVolatilityCategory(statistics.volatility);
+
+    // Prepare data for AI analysis with additional context
+    const analysisContext = {
+      statistics,
+      trends,
+      risk,
+      volatilityCategory,
+    };
+
+    const result = await summarizePricePredictions({
+      crop,
+      historicalPrices: JSON.stringify(historical.map(({ type, ...rest }) => ({
+        ...rest,
+        analysisContext: JSON.stringify(analysisContext)
+      }))),
+      predictedPrices: JSON.stringify(predicted.map(({ type, ...rest }) => rest)),
+    });
+
+    // Format the structured AI response
+    return formatAIResponse(result);
+  } catch (error) {
+    console.error('Error generating AI summary:', error);
+    // Fallback to basic analysis
+    return generateBasicSummary(crop, historical, predicted);
+  }
+};
+
+/**
+ * Format AI response into readable summary
+ */
+function formatAIResponse(aiResult: any): string {
+  const { summary, trendAnalysis, riskAssessment, recommendations, confidenceScore } = aiResult;
+  
+  return `${summary}\n\n**Trend Analysis:**\n${trendAnalysis}\n\n**Risk Assessment:**\n${riskAssessment}\n\n**Recommendations:**\n${recommendations}\n\n**Confidence Score:** ${confidenceScore}%`;
+}
+
+/**
+ * Fallback basic summary when AI fails
+ */
+function generateBasicSummary(
+  crop: string, 
+  historical: PriceDataPoint[], 
+  predicted: PriceDataPoint[]
+): string {
+  const allData = [...historical, ...predicted];
+  const statistics = calculatePriceStatistics(allData);
+  const trends = analyzeTrends(allData);
+  const risk = assessRisk(statistics, trends);
+  
+  return `**${crop} Price Analysis:**\n\n` +
+    `Current trend shows a ${trends.overallTrend} direction with ${trends.momentum} momentum. ` +
+    `Average price is ₹${statistics.mean.toFixed(2)} with ${risk.riskLevel} risk level. ` +
+    `Price volatility is ${getVolatilityCategory(statistics.volatility)} at ${statistics.volatility.toFixed(1)}%. ` +
+    `\n\n**Key Insights:**\n` +
+    `• Price change: ${statistics.changePercentage > 0 ? '+' : ''}${statistics.changePercentage.toFixed(1)}%\n` +
+    `• Risk factors: ${risk.riskFactors.join(', ') || 'None identified'}\n` +
+    `• Market stability: ${risk.stabilityScore.toFixed(0)}%`;
 }
 
 export const fetchPriceForecast = async (crop: string): Promise<CropPriceData> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const historical = generateHistoricalData(crop, 30);
-      const predicted = generatePredictedData(historical, 30);
-      const summary = generateAISummary(crop, predicted);
-      resolve({
-        cropName: crop,
-        historical,
-        predicted,
-        summary,
-      });
-    }, 1000);
-  });
+  const historical = generateHistoricalData(crop, 30);
+  const predicted = generatePredictedData(historical, 30);
+  
+  // Generate AI-powered summary
+  const summary = await generateAIPoweredSummary(crop, historical, predicted);
+  
+  return {
+    cropName: crop,
+    historical,
+    predicted,
+    summary,
+  };
 };
 
 export const getAvailableCrops = async (): Promise<string[]> => {
